@@ -12,6 +12,13 @@ import {
 import { calculateDashboardMetrics } from '../utils/calcUtils';
 import { getTodaySP } from '../utils/dateUtils';
 
+export function isColumnMissingError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || '').toLowerCase();
+  return code === 'PGRST204' || (msg.includes('column') && msg.includes('schema cache'));
+}
+
 export function isTableMissingError(err: any): boolean {
   if (!err) return false;
   const code = String(err.code || '');
@@ -19,20 +26,22 @@ export function isTableMissingError(err: any): boolean {
   const details = String(err.details || '').toLowerCase();
   const hint = String(err.hint || '').toLowerCase();
   const str = JSON.stringify(err).toLowerCase();
+
+  // If the error is only a missing column, the table itself is present!
+  if (isColumnMissingError(err)) {
+    return false;
+  }
+
   return (
     code === 'PGRST205' ||
     code === '42P01' ||
     code === 'PGRST200' ||
-    code === 'PGRST204' ||
-    msg.includes('schema cache') ||
     msg.includes('could not find the table') ||
     msg.includes('does not exist') ||
     msg.includes('relation') ||
-    details.includes('schema cache') ||
     details.includes('could not find the table') ||
     details.includes('does not exist') ||
-    hint.includes('schema cache') ||
-    str.includes('schema cache') ||
+    hint.includes('could not find the table') ||
     str.includes('could not find the table')
   );
 }
@@ -59,6 +68,11 @@ interface DataContextType {
     origem: 'geral' | 'especifica';
     page_id?: string | null;
     fonte_receita: string;
+    moeda?: 'BRL' | 'USD';
+    valor_original?: number;
+    cotacao_usd_brl?: number;
+    valor_brl?: number;
+    data_cotacao?: string | null;
     valor: number;
     data: string;
     horario?: string | null;
@@ -70,6 +84,11 @@ interface DataContextType {
   createExpense: (data: {
     categoria: string;
     page_id?: string | null;
+    moeda?: 'BRL' | 'USD';
+    valor_original?: number;
+    cotacao_usd_brl?: number;
+    valor_brl?: number;
+    data_cotacao?: string | null;
     valor: number;
     data: string;
     descricao?: string | null;
@@ -195,9 +214,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('user_id', user.id);
       if (goalsErr) throw goalsErr;
 
+      const normalizedEarnings: Earning[] = (earningsData || []).map((e: any) => ({
+        ...e,
+        moeda: e.moeda || 'BRL',
+        valor_original: Number(e.valor_original ?? e.valor ?? 0),
+        cotacao_usd_brl: Number(e.cotacao_usd_brl ?? 1),
+        valor_brl: Number(e.valor_brl ?? e.valor ?? 0),
+        data_cotacao: e.data_cotacao || null,
+        valor: Number(e.valor_brl ?? e.valor ?? 0),
+      }));
+
+      const normalizedExpenses: Expense[] = (expensesData || []).map((ex: any) => ({
+        ...ex,
+        moeda: ex.moeda || 'BRL',
+        valor_original: Number(ex.valor_original ?? ex.valor ?? 0),
+        cotacao_usd_brl: Number(ex.cotacao_usd_brl ?? 1),
+        valor_brl: Number(ex.valor_brl ?? ex.valor ?? 0),
+        data_cotacao: ex.data_cotacao || null,
+        valor: Number(ex.valor_brl ?? ex.valor ?? 0),
+      }));
+
       setPages(pagesData || []);
-      setEarnings(earningsData || []);
-      setExpenses(expensesData || []);
+      setEarnings(normalizedEarnings);
+      setExpenses(normalizedExpenses);
       setFollowerHistory(followerData || []);
       setGoals(goalsData || []);
     } catch (err: any) {
@@ -281,34 +320,72 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 2. Earnings
       if (earnings.length > 0) {
-        const earningsPayload = earnings.map((e) => ({
+        const fullEarningsPayload = earnings.map((e) => ({
           id: e.id,
           user_id: user.id,
           page_id: e.page_id,
           origem: e.origem,
           fonte_receita: e.fonte_receita,
-          valor: e.valor,
+          moeda: e.moeda || 'BRL',
+          valor_original: Number(e.valor_original ?? e.valor ?? 0),
+          cotacao_usd_brl: Number(e.cotacao_usd_brl ?? 1),
+          valor_brl: Number(e.valor_brl ?? e.valor ?? 0),
+          data_cotacao: e.data_cotacao || null,
+          valor: Number(e.valor_brl ?? e.valor ?? 0),
           data: e.data,
           horario: e.horario,
           descricao: e.descricao,
         }));
-        const { error: eErr } = await supabase.from('earnings').upsert(earningsPayload);
+        let { error: eErr } = await supabase.from('earnings').upsert(fullEarningsPayload);
+        if (eErr && isColumnMissingError(eErr)) {
+          const baseEarningsPayload = earnings.map((e) => ({
+            id: e.id,
+            user_id: user.id,
+            page_id: e.page_id,
+            origem: e.origem,
+            fonte_receita: e.fonte_receita,
+            valor: Number(e.valor_brl ?? e.valor ?? 0),
+            data: e.data,
+            horario: e.horario,
+            descricao: e.descricao,
+          }));
+          const retryRes = await supabase.from('earnings').upsert(baseEarningsPayload);
+          eErr = retryRes.error;
+        }
         if (eErr) throw eErr;
         count += earnings.length;
       }
 
       // 3. Expenses
       if (expenses.length > 0) {
-        const expensesPayload = expenses.map((ex) => ({
+        const fullExpensesPayload = expenses.map((ex) => ({
           id: ex.id,
           user_id: user.id,
           page_id: ex.page_id,
           categoria: ex.categoria,
-          valor: ex.valor,
+          moeda: ex.moeda || 'BRL',
+          valor_original: Number(ex.valor_original ?? ex.valor ?? 0),
+          cotacao_usd_brl: Number(ex.cotacao_usd_brl ?? 1),
+          valor_brl: Number(ex.valor_brl ?? ex.valor ?? 0),
+          data_cotacao: ex.data_cotacao || null,
+          valor: Number(ex.valor_brl ?? ex.valor ?? 0),
           data: ex.data,
           descricao: ex.descricao,
         }));
-        const { error: exErr } = await supabase.from('expenses').upsert(expensesPayload);
+        let { error: exErr } = await supabase.from('expenses').upsert(fullExpensesPayload);
+        if (exErr && isColumnMissingError(exErr)) {
+          const baseExpensesPayload = expenses.map((ex) => ({
+            id: ex.id,
+            user_id: user.id,
+            page_id: ex.page_id,
+            categoria: ex.categoria,
+            valor: Number(ex.valor_brl ?? ex.valor ?? 0),
+            data: ex.data,
+            descricao: ex.descricao,
+          }));
+          const retryRes = await supabase.from('expenses').upsert(baseExpensesPayload);
+          exErr = retryRes.error;
+        }
         if (exErr) throw exErr;
         count += expenses.length;
       }
@@ -517,6 +594,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     origem: 'geral' | 'especifica';
     page_id?: string | null;
     fonte_receita: string;
+    moeda?: 'BRL' | 'USD';
+    valor_original?: number;
+    cotacao_usd_brl?: number;
+    valor_brl?: number;
+    data_cotacao?: string | null;
     valor: number;
     data: string;
     horario?: string | null;
@@ -538,6 +620,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'A fonte de receita é obrigatória.' };
     }
 
+    const moeda = data.moeda || 'BRL';
+    const valorOriginal = Number(data.valor_original ?? data.valor ?? 0);
+    const cotacao = moeda === 'USD' ? Number(data.cotacao_usd_brl ?? 1) : 1;
+    const valorBrl =
+      moeda === 'USD'
+        ? Number(data.valor_brl ?? valorOriginal * cotacao)
+        : Number(data.valor_brl ?? valorOriginal);
+    const dataCotacao =
+      data.data_cotacao || (moeda === 'USD' ? new Date().toISOString() : null);
+
     const supabase = getSupabase();
     const associatedPage = finalPageId ? pages.find((p) => p.id === finalPageId) || null : null;
 
@@ -547,7 +639,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       page_id: finalPageId,
       origem: data.origem,
       fonte_receita: data.fonte_receita,
-      valor: Number(data.valor),
+      moeda,
+      valor_original: valorOriginal,
+      cotacao_usd_brl: cotacao,
+      valor_brl: valorBrl,
+      data_cotacao: dataCotacao,
+      valor: valorBrl,
       data: data.data,
       horario: data.horario || null,
       descricao: data.descricao?.trim() || null,
@@ -558,14 +655,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (supabase && !isSchemaMissing) {
       try {
-        const { data: sbData, error: sbErr } = await supabase
+        // Attempt full insert with currency columns
+        let sbResult = await supabase
           .from('earnings')
           .insert({
             user_id: user.id,
             page_id: finalPageId,
             origem: data.origem,
             fonte_receita: data.fonte_receita,
-            valor: Number(data.valor),
+            moeda,
+            valor_original: valorOriginal,
+            cotacao_usd_brl: cotacao,
+            valor_brl: valorBrl,
+            data_cotacao: dataCotacao,
+            valor: valorBrl,
             data: data.data,
             horario: data.horario || null,
             descricao: data.descricao?.trim() || null,
@@ -573,15 +676,46 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .select('*, page:pages(*)')
           .single();
 
-        if (sbErr) {
-          if (isTableMissingError(sbErr)) {
-            setIsSchemaMissing(true);
-            throw sbErr;
-          }
-          throw sbErr;
+        // If the Supabase table doesn't have the currency columns yet, retry with base columns
+        if (sbResult.error && isColumnMissingError(sbResult.error)) {
+          sbResult = await supabase
+            .from('earnings')
+            .insert({
+              user_id: user.id,
+              page_id: finalPageId,
+              origem: data.origem,
+              fonte_receita: data.fonte_receita,
+              valor: valorBrl,
+              data: data.data,
+              horario: data.horario || null,
+              descricao: data.descricao?.trim() || null,
+            })
+            .select('*, page:pages(*)')
+            .single();
         }
 
-        const saved = (sbData as Earning) || newEarning;
+        if (sbResult.error) {
+          if (isTableMissingError(sbResult.error)) {
+            setIsSchemaMissing(true);
+            throw sbResult.error;
+          }
+          throw sbResult.error;
+        }
+
+        const savedRow = sbResult.data as any;
+        const saved: Earning = savedRow
+          ? {
+              ...newEarning,
+              ...savedRow,
+              moeda: savedRow.moeda || moeda,
+              valor_original: Number(savedRow.valor_original ?? valorOriginal),
+              cotacao_usd_brl: Number(savedRow.cotacao_usd_brl ?? cotacao),
+              valor_brl: Number(savedRow.valor_brl ?? valorBrl),
+              data_cotacao: savedRow.data_cotacao || dataCotacao,
+              valor: Number(savedRow.valor_brl ?? valorBrl),
+            }
+          : newEarning;
+
         setEarnings((prev) => {
           const updated = [saved, ...prev].sort((a, b) => b.data.localeCompare(a.data));
           saveLocalBackup('earnings', updated);
@@ -622,10 +756,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (finalData.origem === 'geral') {
       finalData.page_id = null;
     }
+    if (finalData.moeda) {
+      if (finalData.moeda === 'BRL') {
+        finalData.cotacao_usd_brl = 1;
+        finalData.valor_brl = Number(finalData.valor_original ?? finalData.valor ?? 0);
+        finalData.valor = finalData.valor_brl;
+      } else if (finalData.moeda === 'USD') {
+        const valOrig = Number(finalData.valor_original ?? finalData.valor ?? 0);
+        const rate = Number(finalData.cotacao_usd_brl ?? 1);
+        finalData.valor_brl = Number(finalData.valor_brl ?? valOrig * rate);
+        finalData.valor = finalData.valor_brl;
+      }
+    }
 
     if (supabase && !isSchemaMissing) {
       try {
-        const { error: sbError } = await supabase
+        let sbError: any = null;
+        const res = await supabase
           .from('earnings')
           .update({
             ...finalData,
@@ -633,6 +780,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
           .eq('id', id)
           .eq('user_id', user.id);
+        sbError = res.error;
+
+        if (sbError && isColumnMissingError(sbError)) {
+          const { moeda, valor_original, cotacao_usd_brl, valor_brl, data_cotacao, ...baseData } =
+            finalData as any;
+          const retryRes = await supabase
+            .from('earnings')
+            .update({
+              ...baseData,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+            .eq('user_id', user.id);
+          sbError = retryRes.error;
+        }
+
         if (sbError) {
           if (isTableMissingError(sbError)) {
             setIsSchemaMissing(true);
@@ -701,6 +864,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createExpense = async (data: {
     categoria: string;
     page_id?: string | null;
+    moeda?: 'BRL' | 'USD';
+    valor_original?: number;
+    cotacao_usd_brl?: number;
+    valor_brl?: number;
+    data_cotacao?: string | null;
     valor: number;
     data: string;
     descricao?: string | null;
@@ -716,6 +884,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'A categoria da despesa é obrigatória.' };
     }
 
+    const moeda = data.moeda || 'BRL';
+    const valorOriginal = Number(data.valor_original ?? data.valor ?? 0);
+    const cotacao = moeda === 'USD' ? Number(data.cotacao_usd_brl ?? 1) : 1;
+    const valorBrl =
+      moeda === 'USD'
+        ? Number(data.valor_brl ?? valorOriginal * cotacao)
+        : Number(data.valor_brl ?? valorOriginal);
+    const dataCotacao =
+      data.data_cotacao || (moeda === 'USD' ? new Date().toISOString() : null);
+
     const supabase = getSupabase();
     const associatedPage = data.page_id ? pages.find((p) => p.id === data.page_id) || null : null;
 
@@ -724,7 +902,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       user_id: user.id,
       page_id: data.page_id || null,
       categoria: data.categoria,
-      valor: Number(data.valor),
+      moeda,
+      valor_original: valorOriginal,
+      cotacao_usd_brl: cotacao,
+      valor_brl: valorBrl,
+      data_cotacao: dataCotacao,
+      valor: valorBrl,
       data: data.data,
       descricao: data.descricao?.trim() || null,
       created_at: new Date().toISOString(),
@@ -734,28 +917,61 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (supabase && !isSchemaMissing) {
       try {
-        const { data: sbData, error: sbErr } = await supabase
+        let sbResult = await supabase
           .from('expenses')
           .insert({
             user_id: user.id,
             page_id: data.page_id || null,
             categoria: data.categoria,
-            valor: Number(data.valor),
+            moeda,
+            valor_original: valorOriginal,
+            cotacao_usd_brl: cotacao,
+            valor_brl: valorBrl,
+            data_cotacao: dataCotacao,
+            valor: valorBrl,
             data: data.data,
             descricao: data.descricao?.trim() || null,
           })
           .select('*, page:pages(*)')
           .single();
 
-        if (sbErr) {
-          if (isTableMissingError(sbErr)) {
-            setIsSchemaMissing(true);
-            throw sbErr;
-          }
-          throw sbErr;
+        if (sbResult.error && isColumnMissingError(sbResult.error)) {
+          sbResult = await supabase
+            .from('expenses')
+            .insert({
+              user_id: user.id,
+              page_id: data.page_id || null,
+              categoria: data.categoria,
+              valor: valorBrl,
+              data: data.data,
+              descricao: data.descricao?.trim() || null,
+            })
+            .select('*, page:pages(*)')
+            .single();
         }
 
-        const saved = (sbData as Expense) || newExpense;
+        if (sbResult.error) {
+          if (isTableMissingError(sbResult.error)) {
+            setIsSchemaMissing(true);
+            throw sbResult.error;
+          }
+          throw sbResult.error;
+        }
+
+        const savedRow = sbResult.data as any;
+        const saved: Expense = savedRow
+          ? {
+              ...newExpense,
+              ...savedRow,
+              moeda: savedRow.moeda || moeda,
+              valor_original: Number(savedRow.valor_original ?? valorOriginal),
+              cotacao_usd_brl: Number(savedRow.cotacao_usd_brl ?? cotacao),
+              valor_brl: Number(savedRow.valor_brl ?? valorBrl),
+              data_cotacao: savedRow.data_cotacao || dataCotacao,
+              valor: Number(savedRow.valor_brl ?? valorBrl),
+            }
+          : newExpense;
+
         setExpenses((prev) => {
           const updated = [saved, ...prev].sort((a, b) => b.data.localeCompare(a.data));
           saveLocalBackup('expenses', updated);
@@ -791,16 +1007,47 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
+    const finalData = { ...data };
+    if (finalData.moeda) {
+      if (finalData.moeda === 'BRL') {
+        finalData.cotacao_usd_brl = 1;
+        finalData.valor_brl = Number(finalData.valor_original ?? finalData.valor ?? 0);
+        finalData.valor = finalData.valor_brl;
+      } else if (finalData.moeda === 'USD') {
+        const valOrig = Number(finalData.valor_original ?? finalData.valor ?? 0);
+        const rate = Number(finalData.cotacao_usd_brl ?? 1);
+        finalData.valor_brl = Number(finalData.valor_brl ?? valOrig * rate);
+        finalData.valor = finalData.valor_brl;
+      }
+    }
+
     if (supabase && !isSchemaMissing) {
       try {
-        const { error: sbError } = await supabase
+        let sbError: any = null;
+        const res = await supabase
           .from('expenses')
           .update({
-            ...data,
+            ...finalData,
             updated_at: new Date().toISOString(),
           })
           .eq('id', id)
           .eq('user_id', user.id);
+        sbError = res.error;
+
+        if (sbError && isColumnMissingError(sbError)) {
+          const { moeda, valor_original, cotacao_usd_brl, valor_brl, data_cotacao, ...baseData } =
+            finalData as any;
+          const retryRes = await supabase
+            .from('expenses')
+            .update({
+              ...baseData,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', id)
+            .eq('user_id', user.id);
+          sbError = retryRes.error;
+        }
+
         if (sbError) {
           if (isTableMissingError(sbError)) {
             setIsSchemaMissing(true);
@@ -818,7 +1065,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setExpenses((prev) => {
       const updated = prev.map((ex) => {
         if (ex.id === id) {
-          const merged = { ...ex, ...data, updated_at: new Date().toISOString() };
+          const merged = { ...ex, ...finalData, updated_at: new Date().toISOString() };
           merged.page = merged.page_id ? pages.find((p) => p.id === merged.page_id) || null : null;
           return merged;
         }

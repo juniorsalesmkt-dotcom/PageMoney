@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS public.earnings (
     page_id UUID REFERENCES public.pages(id) ON DELETE SET NULL,
     origem TEXT NOT NULL CHECK (origem IN ('geral', 'especifica')),
     fonte_receita TEXT NOT NULL,
+    moeda TEXT DEFAULT 'BRL' NOT NULL,
+    valor_original NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    cotacao_usd_brl NUMERIC(10, 4) DEFAULT 1.0000 NOT NULL,
+    valor_brl NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    data_cotacao TIMESTAMPTZ,
     valor NUMERIC(12, 2) NOT NULL CHECK (valor > 0),
     data DATE NOT NULL,
     horario TEXT,
@@ -52,6 +57,11 @@ CREATE TABLE IF NOT EXISTS public.expenses (
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     page_id UUID REFERENCES public.pages(id) ON DELETE SET NULL,
     categoria TEXT NOT NULL,
+    moeda TEXT DEFAULT 'BRL' NOT NULL,
+    valor_original NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    cotacao_usd_brl NUMERIC(10, 4) DEFAULT 1.0000 NOT NULL,
+    valor_brl NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    data_cotacao TIMESTAMPTZ,
     valor NUMERIC(12, 2) NOT NULL CHECK (valor > 0),
     data DATE NOT NULL,
     descricao TEXT,
@@ -179,4 +189,69 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Atualização automática de colunas para tabelas já existentes
+ALTER TABLE public.earnings
+    ADD COLUMN IF NOT EXISTS moeda TEXT DEFAULT 'BRL' NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_original NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS cotacao_usd_brl NUMERIC(10, 4) DEFAULT 1.0000 NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_brl NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS data_cotacao TIMESTAMPTZ;
+
+UPDATE public.earnings
+SET
+    moeda = COALESCE(moeda, 'BRL'),
+    valor_original = CASE WHEN valor_original = 0 OR valor_original IS NULL THEN valor ELSE valor_original END,
+    cotacao_usd_brl = CASE WHEN cotacao_usd_brl IS NULL OR cotacao_usd_brl = 0 THEN 1.0000 ELSE cotacao_usd_brl END,
+    valor_brl = CASE WHEN valor_brl = 0 OR valor_brl IS NULL THEN valor ELSE valor_brl END
+WHERE moeda IS NULL OR valor_original = 0 OR cotacao_usd_brl = 0 OR valor_brl = 0;
+
+ALTER TABLE public.expenses
+    ADD COLUMN IF NOT EXISTS moeda TEXT DEFAULT 'BRL' NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_original NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS cotacao_usd_brl NUMERIC(10, 4) DEFAULT 1.0000 NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_brl NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS data_cotacao TIMESTAMPTZ;
+
+UPDATE public.expenses
+SET
+    moeda = COALESCE(moeda, 'BRL'),
+    valor_original = CASE WHEN valor_original = 0 OR valor_original IS NULL THEN valor ELSE valor_original END,
+    cotacao_usd_brl = CASE WHEN cotacao_usd_brl IS NULL OR cotacao_usd_brl = 0 THEN 1.0000 ELSE cotacao_usd_brl END,
+    valor_brl = CASE WHEN valor_brl = 0 OR valor_brl IS NULL THEN valor ELSE valor_brl END
+WHERE moeda IS NULL OR valor_original = 0 OR cotacao_usd_brl = 0 OR valor_brl = 0;
+`;
+
+export const SUPABASE_MIGRATION_CURRENCY_SQL = `-- ATUALIZAÇÃO PARA SUPORTE A DÓLAR (USD) E MULTIMOEDAS
+-- Execute este script no SQL Editor do Supabase se suas tabelas já foram criadas anteriormente.
+
+ALTER TABLE public.earnings
+    ADD COLUMN IF NOT EXISTS moeda TEXT DEFAULT 'BRL' NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_original NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS cotacao_usd_brl NUMERIC(10, 4) DEFAULT 1.0000 NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_brl NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS data_cotacao TIMESTAMPTZ;
+
+UPDATE public.earnings
+SET
+    moeda = COALESCE(moeda, 'BRL'),
+    valor_original = CASE WHEN valor_original = 0 OR valor_original IS NULL THEN valor ELSE valor_original END,
+    cotacao_usd_brl = CASE WHEN cotacao_usd_brl IS NULL OR cotacao_usd_brl = 0 THEN 1.0000 ELSE cotacao_usd_brl END,
+    valor_brl = CASE WHEN valor_brl = 0 OR valor_brl IS NULL THEN valor ELSE valor_brl END
+WHERE moeda IS NULL OR valor_original = 0 OR cotacao_usd_brl = 0 OR valor_brl = 0;
+
+ALTER TABLE public.expenses
+    ADD COLUMN IF NOT EXISTS moeda TEXT DEFAULT 'BRL' NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_original NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS cotacao_usd_brl NUMERIC(10, 4) DEFAULT 1.0000 NOT NULL,
+    ADD COLUMN IF NOT EXISTS valor_brl NUMERIC(12, 2) DEFAULT 0 NOT NULL,
+    ADD COLUMN IF NOT EXISTS data_cotacao TIMESTAMPTZ;
+
+UPDATE public.expenses
+SET
+    moeda = COALESCE(moeda, 'BRL'),
+    valor_original = CASE WHEN valor_original = 0 OR valor_original IS NULL THEN valor ELSE valor_original END,
+    cotacao_usd_brl = CASE WHEN cotacao_usd_brl IS NULL OR cotacao_usd_brl = 0 THEN 1.0000 ELSE cotacao_usd_brl END,
+    valor_brl = CASE WHEN valor_brl = 0 OR valor_brl IS NULL THEN valor ELSE valor_brl END
+WHERE moeda IS NULL OR valor_original = 0 OR cotacao_usd_brl = 0 OR valor_brl = 0;
 `;

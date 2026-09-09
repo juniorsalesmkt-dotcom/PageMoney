@@ -1,5 +1,7 @@
 export type PlatformType = 'Facebook' | 'Instagram' | 'TikTok' | 'YouTube' | 'Outra';
 
+export type CurrencyType = 'BRL' | 'USD';
+
 export type EarningOrigin = 'geral' | 'especifica';
 
 export type RevenueSource =
@@ -51,7 +53,12 @@ export interface Earning {
   page_id: string | null; // NULL when origem = 'geral'
   origem: EarningOrigin;
   fonte_receita: string;
-  valor: number;
+  moeda: CurrencyType;
+  valor_original: number;
+  cotacao_usd_brl: number;
+  valor_brl: number;
+  data_cotacao?: string | null;
+  valor: number; // Consolidado em BRL para compatibilidade
   data: string; // YYYY-MM-DD
   horario?: string | null;
   descricao?: string | null;
@@ -66,7 +73,12 @@ export interface Expense {
   user_id: string;
   page_id: string | null;
   categoria: string;
-  valor: number;
+  moeda?: CurrencyType;
+  valor_original?: number;
+  cotacao_usd_brl?: number;
+  valor_brl?: number;
+  data_cotacao?: string | null;
+  valor: number; // Consolidado em BRL
   data: string; // YYYY-MM-DD
   descricao?: string | null;
   created_at: string;

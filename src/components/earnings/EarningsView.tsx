@@ -40,6 +40,7 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
   const [customEnd, setCustomEnd] = useState<string>('');
   const [selectedPageFilter, setSelectedPageFilter] = useState<string>('all');
   const [selectedSourceFilter, setSelectedSourceFilter] = useState<string>('all');
+  const [selectedCurrencyFilter, setSelectedCurrencyFilter] = useState<string>('all');
   const [searchDesc, setSearchDesc] = useState<string>('');
 
   const [editingEarning, setEditingEarning] = useState<Earning | null>(null);
@@ -90,6 +91,12 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
         return false;
       }
 
+      // Currency filter
+      if (selectedCurrencyFilter !== 'all') {
+        const itemMoeda = item.moeda || 'BRL';
+        if (itemMoeda !== selectedCurrencyFilter) return false;
+      }
+
       // Description search
       if (searchDesc.trim()) {
         const query = searchDesc.toLowerCase();
@@ -107,6 +114,7 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
     customEnd,
     selectedPageFilter,
     selectedSourceFilter,
+    selectedCurrencyFilter,
     searchDesc,
   ]);
 
@@ -186,7 +194,7 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
 
       {/* Filter Controls Bar */}
       <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-2xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Period Select */}
           <div>
             <label className="block text-[11px] font-medium text-neutral-600 mb-1">
@@ -246,6 +254,22 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
               <option value="Publicidade">Publicidade</option>
               <option value="Produtos próprios">Produtos próprios</option>
               <option value="Outros">Outros</option>
+            </select>
+          </div>
+
+          {/* Currency Select */}
+          <div>
+            <label className="block text-[11px] font-medium text-neutral-600 mb-1">
+              Moeda
+            </label>
+            <select
+              value={selectedCurrencyFilter}
+              onChange={(e) => setSelectedCurrencyFilter(e.target.value)}
+              className="block w-full px-3 py-1.5 text-xs border border-neutral-300 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-hidden bg-white"
+            >
+              <option value="all">Todas as moedas</option>
+              <option value="BRL">Apenas Real (BRL)</option>
+              <option value="USD">Apenas Dólar (USD)</option>
             </select>
           </div>
 
@@ -359,9 +383,32 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
                       </td>
 
                       <td className="px-6 py-3.5 whitespace-nowrap">
-                        <span className="font-bold text-emerald-600 text-sm">
-                          {formatCurrency(item.valor)}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="font-bold text-emerald-600 text-sm">
+                            {formatCurrency(item.valor_brl ?? item.valor)}
+                          </span>
+                          {item.moeda === 'USD' && (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-900">
+                                USD
+                              </span>
+                              <span className="text-[11px] text-neutral-600 font-medium">
+                                ${(item.valor_original ?? 0).toLocaleString('en-US', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </span>
+                              {item.cotacao_usd_brl && item.cotacao_usd_brl > 1 && (
+                                <span
+                                  className="text-[10px] text-neutral-400"
+                                  title={`Cotação utilizada: 1 USD = R$ ${item.cotacao_usd_brl.toFixed(4)}`}
+                                >
+                                  (R$ {item.cotacao_usd_brl.toFixed(2)})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       <td className="px-6 py-3.5 text-right whitespace-nowrap">
