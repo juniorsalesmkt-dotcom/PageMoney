@@ -25,6 +25,7 @@ interface EarningModalProps {
 }
 
 const DEFAULT_SOURCES: RevenueSource[] = [
+  'TikTok Shop',
   'Shopee Afiliados',
   'E-books',
   'Monetização de conteúdo',

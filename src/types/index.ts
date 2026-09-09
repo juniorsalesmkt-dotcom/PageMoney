@@ -5,6 +5,7 @@ export type CurrencyType = 'BRL' | 'USD';
 export type EarningOrigin = 'geral' | 'especifica';
 
 export type RevenueSource =
+  | 'TikTok Shop'
   | 'Shopee Afiliados'
   | 'E-books'
   | 'Monetização de conteúdo'

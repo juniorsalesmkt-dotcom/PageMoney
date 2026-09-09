@@ -247,6 +247,7 @@ export const EarningsView: React.FC<EarningsViewProps> = ({ onOpenNewEarning, on
               className="block w-full px-3 py-1.5 text-xs border border-neutral-300 rounded-lg focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 outline-hidden bg-white"
             >
               <option value="all">Todas as fontes</option>
+              <option value="TikTok Shop">TikTok Shop</option>
               <option value="Shopee Afiliados">Shopee Afiliados</option>
               <option value="E-books">E-books</option>
               <option value="Monetização de conteúdo">Monetização de conteúdo</option>
