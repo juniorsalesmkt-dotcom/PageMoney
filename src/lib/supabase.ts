@@ -1,37 +1,28 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Retrieve environment variables
-const rawEnvUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || '';
-
-// Primary key: VITE_SUPABASE_PUBLISHABLE_KEY
-// Fallback: VITE_SUPABASE_ANON_KEY (for backwards compatibility if provided in environment)
-const rawKey = (
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim() ||
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ||
-  ''
-);
+// Default project credentials configured for this workspace
+export const DEFAULT_SUPABASE_URL = 'https://jzxvgeaxeftwicavvbeb.supabase.co';
+export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_t4q3_KphlRRwnHEH-QaO-g_o2FQAfc-';
 
 /**
  * Normalizes Supabase Project URL:
  * Supabase createClient requires the project origin (e.g. "https://abcdef.supabase.co").
  * If the user enters "https://abcdef.supabase.co/rest/v1/" or trailing slashes,
  * this extracts just the protocol and hostname to prevent routing errors.
- * 
- * Also handles recovery if the project URL was provided in chat or previous steps
- * ("https://jzxvgeaxeftwicavvbeb.supabase.co").
  */
-function normalizeSupabaseUrl(url: string): string {
+export function normalizeSupabaseUrl(url: string): string {
   if (!url) return '';
+  const trimmed = url.trim();
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(trimmed);
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
       return parsed.origin;
     }
     return '';
   } catch {
-    if (url.includes('.supabase.co')) {
+    if (trimmed.includes('.supabase.co')) {
       try {
-        const parsed = new URL(`https://${url.replace(/^\/+/, '')}`);
+        const parsed = new URL(`https://${trimmed.replace(/^\/+/, '')}`);
         return parsed.origin;
       } catch {
         return '';
@@ -41,22 +32,45 @@ function normalizeSupabaseUrl(url: string): string {
   }
 }
 
-// Check if rawEnvUrl is a valid URL or if it was mistakenly set to a key.
-// If not a valid URL, fallback to the project URL provided by the user (jzxvgeaxeftwicavvbeb)
-let cleanedUrl = normalizeSupabaseUrl(rawEnvUrl);
-if (!cleanedUrl) {
-  // Known verified project instance for this workspace
-  cleanedUrl = 'https://jzxvgeaxeftwicavvbeb.supabase.co';
+// 1. Read raw environment variables
+const rawEnvUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || '';
+const rawEnvKey = (
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim() ||
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ||
+  ''
+);
+
+// 2. Safeguard: detect if key was accidentally pasted into VITE_SUPABASE_URL
+const urlLooksLikeKey = rawEnvUrl.startsWith('sb_') || (rawEnvUrl.length > 30 && !rawEnvUrl.includes('.'));
+const resolvedEnvUrl = urlLooksLikeKey ? '' : rawEnvUrl;
+const resolvedEnvKey = rawEnvKey || (urlLooksLikeKey ? rawEnvUrl : '');
+
+// 3. Read custom credentials from localStorage if available (client-side override)
+let storedUrl = '';
+let storedKey = '';
+if (typeof window !== 'undefined') {
+  try {
+    storedUrl = localStorage.getItem('pagemoney_supabase_url')?.trim() || '';
+    storedKey = localStorage.getItem('pagemoney_supabase_key')?.trim() || '';
+  } catch {
+    // ignore
+  }
 }
+
+// 4. Resolve final cleaned URL
+let finalUrl = normalizeSupabaseUrl(resolvedEnvUrl) || normalizeSupabaseUrl(storedUrl) || DEFAULT_SUPABASE_URL;
+
+// 5. Resolve final publishable key
+let finalKey = resolvedEnvKey || storedKey || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 
 /**
  * Validates if the Supabase environment variables are properly configured.
  */
 export const isConfigured: boolean = Boolean(
-  cleanedUrl &&
-  rawKey &&
-  !cleanedUrl.includes('placeholder') &&
-  rawKey.length > 20
+  finalUrl &&
+  finalKey &&
+  finalKey.length > 20 &&
+  !finalUrl.includes('placeholder')
 );
 
 /**
@@ -66,34 +80,25 @@ export function getConfigurationErrorMessage(): string | null {
   if (isConfigured) return null;
 
   const missing: string[] = [];
-  if (!cleanedUrl) {
-    missing.push('VITE_SUPABASE_URL (URL do projeto: https://jzxvgeaxeftwicavvbeb.supabase.co)');
+  if (!finalUrl) {
+    missing.push('VITE_SUPABASE_URL (URL do projeto)');
   }
-
-  if (!rawKey) {
+  if (!finalKey || finalKey.length <= 20) {
     missing.push('VITE_SUPABASE_PUBLISHABLE_KEY');
   }
 
-  return `As seguintes variáveis de ambiente do Supabase precisam de atenção: ${missing.join(', ')}. Configure-as no painel de ambiente para ativar a sincronização na nuvem e autenticação.`;
+  return `As seguintes configurações do Supabase precisam de atenção: ${missing.join(', ')}.`;
 }
 
-// Log status in the browser console
-if (!isConfigured) {
-  const errorMessage = getConfigurationErrorMessage();
-  console.warn(`[PageMoney Supabase Config] ⚠️ ${errorMessage}`);
+// Log status in browser console
+if (isConfigured) {
+  console.info(`[PageMoney Supabase] ✓ Conectado com sucesso ao projeto: ${finalUrl}`);
 } else {
-  console.info(`[PageMoney Supabase Config] ✓ Conectado a ${cleanedUrl}`);
+  console.warn(`[PageMoney Supabase] ⚠️ ${getConfigurationErrorMessage()}`);
 }
 
-// Use sanitized URL or fallback to placeholder credentials so createClient does not crash at bundle evaluation
-const supabaseUrl = cleanedUrl || 'https://placeholder.supabase.co';
-const supabaseKey = isConfigured ? rawKey : 'placeholder-publishable-key-000000000000';
-
-/**
- * Pre-configured Supabase client instance.
- * Strictly uses public/publishable key - never secret or service_role keys.
- */
-export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
+// Pre-configured Supabase client instance using normalized URL and safe publishable key
+export const supabase: SupabaseClient = createClient(finalUrl, finalKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -109,10 +114,10 @@ export function isSupabaseConfigured(): boolean {
 }
 
 /**
- * Returns the Supabase client instance if properly configured, or null if unconfigured.
+ * Returns the Supabase client instance if properly configured.
  */
-export function getSupabase(): SupabaseClient | null {
-  return isConfigured ? supabase : null;
+export function getSupabase(): SupabaseClient {
+  return supabase;
 }
 
 /**
@@ -127,27 +132,26 @@ export function getSupabaseConfigStatus(): {
   missingVariables: string[];
   errorMessage: string | null;
 } {
-  const missing: string[] = [];
-  const hasKey = Boolean(rawKey && rawKey.length > 20);
-  const urlValid = Boolean(cleanedUrl);
-
-  if (!urlValid) {
-    missing.push('VITE_SUPABASE_URL (URL inválida: deve ser https://jzxvgeaxeftwicavvbeb.supabase.co)');
-  }
-
-  if (!hasKey) {
-    missing.push('VITE_SUPABASE_PUBLISHABLE_KEY');
-  }
-
   return {
-    isConfigured: urlValid && hasKey,
-    hasUrl: Boolean(rawEnvUrl || cleanedUrl),
-    hasKey,
-    urlValid,
-    normalizedUrl: cleanedUrl,
-    missingVariables: missing,
+    isConfigured,
+    hasUrl: Boolean(finalUrl),
+    hasKey: Boolean(finalKey && finalKey.length > 20),
+    urlValid: Boolean(finalUrl && finalUrl.startsWith('https://')),
+    normalizedUrl: finalUrl,
+    missingVariables: isConfigured ? [] : ['VITE_SUPABASE_PUBLISHABLE_KEY'],
     errorMessage: getConfigurationErrorMessage(),
   };
+}
+
+/**
+ * Allows user to update credentials locally from the UI if necessary
+ */
+export function setCustomCredentials(url: string, key: string): void {
+  if (typeof window !== 'undefined') {
+    if (url) localStorage.setItem('pagemoney_supabase_url', url.trim());
+    if (key) localStorage.setItem('pagemoney_supabase_key', key.trim());
+    window.location.reload();
+  }
 }
 
 export default supabase;
