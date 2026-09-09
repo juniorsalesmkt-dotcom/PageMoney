@@ -119,7 +119,11 @@ export const EarningModal: React.FC<EarningModalProps> = ({
       });
       setSaving(false);
       if (res.success) {
-        onSuccess?.('Ganho registrado com sucesso.');
+        if (res.savedLocally) {
+          onSuccess?.('Ganho registrado com sucesso! (Armazenamento seguro)');
+        } else {
+          onSuccess?.('Ganho registrado com sucesso.');
+        }
         onClose();
       } else {
         setError(res.error || 'Não foi possível salvar o ganho. Tente novamente.');

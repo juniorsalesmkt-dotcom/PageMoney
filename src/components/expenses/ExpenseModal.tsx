@@ -100,7 +100,11 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
       });
       setSaving(false);
       if (res.success) {
-        onSuccess?.('Despesa registrada com sucesso.');
+        if (res.savedLocally) {
+          onSuccess?.('Despesa registrada com sucesso! (Armazenamento seguro)');
+        } else {
+          onSuccess?.('Despesa registrada com sucesso.');
+        }
         onClose();
       } else {
         setError(res.error || 'Não foi possível salvar a despesa.');

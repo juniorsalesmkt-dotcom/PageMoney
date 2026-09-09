@@ -95,7 +95,11 @@ export const PageModal: React.FC<PageModalProps> = ({
       });
       setSaving(false);
       if (res.success) {
-        onSuccess?.('Página cadastrada com sucesso.');
+        if (res.savedLocally) {
+          onSuccess?.('Página cadastrada com sucesso! (Armazenamento local seguro)');
+        } else {
+          onSuccess?.('Página cadastrada com sucesso.');
+        }
         onClose();
       } else {
         setError(res.error || 'Não foi possível cadastrar a página.');

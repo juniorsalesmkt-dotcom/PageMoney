@@ -19,11 +19,12 @@ import { useTheme } from '../../context/ThemeContext';
 
 interface SettingsViewProps {
   onToast: (msg: string, type?: 'success' | 'error') => void;
+  onOpenSqlModal?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onToast }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onToast, onOpenSqlModal }) => {
   const { user, profile, isConfigured, updateProfileName } = useAuth();
-  const { refreshData } = useData();
+  const { refreshData, isSchemaMissing } = useData();
   const { theme, setTheme, isDark } = useTheme();
 
   const [nome, setNome] = useState(profile?.nome || '');
@@ -149,31 +150,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onToast }) => {
                 </h3>
                 <span
                   className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    isConfigured
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-amber-100 text-amber-800'
+                    !isConfigured
+                      ? 'bg-amber-100 text-amber-800'
+                      : isSchemaMissing
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : 'bg-emerald-100 text-emerald-800'
                   }`}
                 >
-                  {isConfigured ? 'Conectado & Real' : 'Modo Demonstração'}
+                  {!isConfigured
+                    ? 'Modo Demonstração'
+                    : isSchemaMissing
+                    ? 'Tabelas Pendentes no Supabase'
+                    : 'Conectado & Real'}
                 </span>
               </div>
               <p className="text-xs text-neutral-500 mt-1">
-                {isConfigured
-                  ? 'O PageMoney está conectado a um banco PostgreSQL do Supabase com Row Level Security (RLS) ativo.'
-                  : 'As variáveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY não foram preenchidas no ambiente. Adicione suas credenciais do Supabase para persistência permanente.'}
+                {!isConfigured
+                  ? 'As variáveis do Supabase não foram configuradas.'
+                  : isSchemaMissing
+                  ? 'O Supabase está conectado, porém as tabelas (pages, earnings, expenses, etc.) ainda não foram criadas no banco. Clique em "Ativar Tabelas (SQL)" para criar com 1 clique.'
+                  : 'O PageMoney está conectado a um banco PostgreSQL do Supabase com Row Level Security (RLS) ativo e todas as tabelas operacionais.'}
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleManualRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-neutral-700 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            Sincronizar Banco
-          </button>
+          <div className="flex items-center gap-2">
+            {onOpenSqlModal && (
+              <button
+                type="button"
+                onClick={onOpenSqlModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg shadow-xs transition"
+              >
+                <Database className="w-3.5 h-3.5" />
+                {isSchemaMissing ? 'Ativar Tabelas (SQL)' : 'Ver Script SQL'}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-neutral-700 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Sincronizar Banco
+            </button>
+          </div>
         </div>
 
         {/* Database Tables Overview */}

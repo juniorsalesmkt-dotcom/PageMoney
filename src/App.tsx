@@ -17,11 +17,12 @@ import { SettingsView } from './components/settings/SettingsView';
 import { EarningModal } from './components/earnings/EarningModal';
 import { PageModal } from './components/pages/PageModal';
 import { FollowerModal } from './components/growth/FollowerModal';
+import { SqlSetupModal } from './components/common/SqlSetupModal';
 import { Toast, ToastMessage } from './components/common/Toast';
 
 const AppContent: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
-  const { loading: dataLoading } = useData();
+  const { loading: dataLoading, isSchemaMissing } = useData();
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [isOpenMobileNav, setIsOpenMobileNav] = useState(false);
@@ -30,6 +31,7 @@ const AppContent: React.FC = () => {
   const [isNewEarningOpen, setIsNewEarningOpen] = useState(false);
   const [isNewPageOpen, setIsNewPageOpen] = useState(false);
   const [isFollowerModalOpen, setIsFollowerModalOpen] = useState(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [followerModalDefaultPageId, setFollowerModalDefaultPageId] = useState<string | undefined>(undefined);
 
   // Growth View selected page for detail
@@ -108,6 +110,27 @@ const AppContent: React.FC = () => {
             </div>
           )}
 
+          {isSchemaMissing && (
+            <div className="mb-5 p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                <div>
+                  <span className="font-bold text-amber-950">Modo Local Seguro Ativo:</span>
+                  <span className="ml-1 text-amber-800">
+                    O Supabase está conectado, mas as tabelas ainda não foram criadas no banco de dados. Suas páginas e dados estão salvos com segurança no seu navegador.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSqlModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs shrink-0 cursor-pointer"
+              >
+                Ativar Tabelas no Supabase (1 clique)
+              </button>
+            </div>
+          )}
+
           {activeTab === 'dashboard' && (
             <DashboardView onOpenNewEarning={() => setIsNewEarningOpen(true)} />
           )}
@@ -144,7 +167,12 @@ const AppContent: React.FC = () => {
 
           {activeTab === 'goals' && <GoalsView onToast={addToast} />}
 
-          {activeTab === 'settings' && <SettingsView onToast={addToast} />}
+          {activeTab === 'settings' && (
+            <SettingsView
+              onToast={addToast}
+              onOpenSqlModal={() => setIsSqlModalOpen(true)}
+            />
+          )}
         </main>
       </div>
 
@@ -169,6 +197,12 @@ const AppContent: React.FC = () => {
         }}
         defaultPageId={followerModalDefaultPageId}
         onSuccess={(msg) => addToast(msg, 'success')}
+      />
+
+      <SqlSetupModal
+        isOpen={isSqlModalOpen}
+        onClose={() => setIsSqlModalOpen(false)}
+        onSuccessToast={(msg) => addToast(msg, 'success')}
       />
     </div>
   );

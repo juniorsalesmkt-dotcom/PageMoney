@@ -12,6 +12,31 @@ import {
 import { calculateDashboardMetrics } from '../utils/calcUtils';
 import { getTodaySP } from '../utils/dateUtils';
 
+export function isTableMissingError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || '').toLowerCase();
+  const details = String(err.details || '').toLowerCase();
+  const hint = String(err.hint || '').toLowerCase();
+  const str = JSON.stringify(err).toLowerCase();
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    code === 'PGRST200' ||
+    code === 'PGRST204' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table') ||
+    msg.includes('does not exist') ||
+    msg.includes('relation') ||
+    details.includes('schema cache') ||
+    details.includes('could not find the table') ||
+    details.includes('does not exist') ||
+    hint.includes('schema cache') ||
+    str.includes('schema cache') ||
+    str.includes('could not find the table')
+  );
+}
+
 interface DataContextType {
   pages: ContentPage[];
   earnings: Earning[];
@@ -21,9 +46,12 @@ interface DataContextType {
   metrics: DashboardMetrics;
   loading: boolean;
   error: string | null;
+  isSchemaMissing: boolean;
   refreshData: () => Promise<void>;
+  checkSchema: () => Promise<boolean>;
+  syncLocalDataToSupabase: () => Promise<{ success: boolean; count?: number; error?: string }>;
   // Pages CRUD
-  createPage: (data: Omit<ContentPage, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<{ success: boolean; error?: string }>;
+  createPage: (data: Omit<ContentPage, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<{ success: boolean; error?: string; savedLocally?: boolean }>;
   updatePage: (id: string, data: Partial<ContentPage>) => Promise<{ success: boolean; error?: string }>;
   deletePage: (id: string) => Promise<{ success: boolean; error?: string }>;
   // Earnings CRUD
@@ -35,7 +63,7 @@ interface DataContextType {
     data: string;
     horario?: string | null;
     descricao?: string | null;
-  }) => Promise<{ success: boolean; error?: string }>;
+  }) => Promise<{ success: boolean; error?: string; savedLocally?: boolean }>;
   updateEarning: (id: string, data: Partial<Earning>) => Promise<{ success: boolean; error?: string }>;
   deleteEarning: (id: string) => Promise<{ success: boolean; error?: string }>;
   // Expenses CRUD
@@ -45,7 +73,7 @@ interface DataContextType {
     valor: number;
     data: string;
     descricao?: string | null;
-  }) => Promise<{ success: boolean; error?: string }>;
+  }) => Promise<{ success: boolean; error?: string; savedLocally?: boolean }>;
   updateExpense: (id: string, data: Partial<Expense>) => Promise<{ success: boolean; error?: string }>;
   deleteExpense: (id: string) => Promise<{ success: boolean; error?: string }>;
   // Follower History
@@ -59,17 +87,30 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
+
   const [pages, setPages] = useState<ContentPage[]>([]);
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [followerHistory, setFollowerHistory] = useState<FollowerHistory[]>([]);
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSchemaMissing, setIsSchemaMissing] = useState(false);
 
-  // Local storage cache keys scoped per user
-  const userStorageKey = (key: string) => `pagemoney_${user?.id || 'guest'}_${key}`;
+  const userStorageKey = useCallback(
+    (prefix: string) => `pagemoney_${user ? user.id : 'anon'}_${prefix}`,
+    [user]
+  );
 
+  const saveLocalBackup = useCallback((key: string, data: any) => {
+    try {
+      localStorage.setItem(userStorageKey(key), JSON.stringify(data));
+    } catch {
+      // ignore
+    }
+  }, [userStorageKey]);
+
+  // Load all data from Supabase, or fall back to localStorage gracefully
   const loadAllData = useCallback(async () => {
     if (!user) {
       setPages([]);
@@ -77,15 +118,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setExpenses([]);
       setFollowerHistory([]);
       setGoals([]);
+      setLoading(false);
       return;
     }
 
     setLoading(true);
     setError(null);
+
     const supabase = getSupabase();
 
     if (!supabase) {
-      // In local mode before Supabase credentials are configured, read from local scoped store
       try {
         const p = JSON.parse(localStorage.getItem(userStorageKey('pages')) || '[]');
         const e = JSON.parse(localStorage.getItem(userStorageKey('earnings')) || '[]');
@@ -111,7 +153,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .eq('user_id', user.id)
         .order('nome', { ascending: true });
-      if (pagesErr) throw pagesErr;
+
+      if (pagesErr) {
+        if (isTableMissingError(pagesErr)) {
+          setIsSchemaMissing(true);
+          throw pagesErr;
+        }
+        throw pagesErr;
+      }
+
+      setIsSchemaMissing(false);
 
       // Fetch earnings with page details
       const { data: earningsData, error: earningsErr } = await supabase
@@ -150,9 +201,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setFollowerHistory(followerData || []);
       setGoals(goalsData || []);
     } catch (err: any) {
-      console.warn('Error fetching Supabase data, checking local fallback:', err);
-      setError(err.message || 'Erro ao carregar dados do Supabase');
-      // If tables don't exist yet, fall back gracefully
+      if (isTableMissingError(err)) {
+        setIsSchemaMissing(true);
+        console.info('[PageMoney] Tabelas do Supabase ainda não criadas. Operando com armazenamento local seguro.');
+      } else {
+        console.warn('Error fetching Supabase data, checking local fallback:', err);
+        setError(err.message || 'Erro ao carregar dados do Supabase');
+      }
+
+      // If tables don't exist yet, fall back gracefully to local storage
       try {
         const p = JSON.parse(localStorage.getItem(userStorageKey('pages')) || '[]');
         const e = JSON.parse(localStorage.getItem(userStorageKey('earnings')) || '[]');
@@ -170,18 +227,125 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, userStorageKey]);
 
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
 
-  // Sync to local backup
-  const saveLocalBackup = (key: string, data: any) => {
+  // Check if tables are now available in Supabase
+  const checkSchema = async (): Promise<boolean> => {
+    const supabase = getSupabase();
+    if (!supabase) return false;
     try {
-      localStorage.setItem(userStorageKey(key), JSON.stringify(data));
+      const { error } = await supabase.from('pages').select('id').limit(1);
+      if (error) {
+        if (isTableMissingError(error)) {
+          setIsSchemaMissing(true);
+          return false;
+        }
+      }
+      setIsSchemaMissing(false);
+      return true;
     } catch {
-      // ignore
+      return false;
+    }
+  };
+
+  // Sync local data up to Supabase once tables are created
+  const syncLocalDataToSupabase = async (): Promise<{ success: boolean; count?: number; error?: string }> => {
+    if (!user) return { success: false, error: 'Usuário não autenticado' };
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase indisponível' };
+
+    try {
+      let count = 0;
+
+      // 1. Pages
+      if (pages.length > 0) {
+        const pagesPayload = pages.map((p) => ({
+          id: p.id,
+          user_id: user.id,
+          nome: p.nome,
+          plataforma: p.plataforma,
+          nicho: p.nicho,
+          username: p.username,
+          url: p.url,
+          status: p.status,
+          observacoes: p.observacoes,
+        }));
+        const { error: pErr } = await supabase.from('pages').upsert(pagesPayload);
+        if (pErr) throw pErr;
+        count += pages.length;
+      }
+
+      // 2. Earnings
+      if (earnings.length > 0) {
+        const earningsPayload = earnings.map((e) => ({
+          id: e.id,
+          user_id: user.id,
+          page_id: e.page_id,
+          origem: e.origem,
+          fonte_receita: e.fonte_receita,
+          valor: e.valor,
+          data: e.data,
+          horario: e.horario,
+          descricao: e.descricao,
+        }));
+        const { error: eErr } = await supabase.from('earnings').upsert(earningsPayload);
+        if (eErr) throw eErr;
+        count += earnings.length;
+      }
+
+      // 3. Expenses
+      if (expenses.length > 0) {
+        const expensesPayload = expenses.map((ex) => ({
+          id: ex.id,
+          user_id: user.id,
+          page_id: ex.page_id,
+          categoria: ex.categoria,
+          valor: ex.valor,
+          data: ex.data,
+          descricao: ex.descricao,
+        }));
+        const { error: exErr } = await supabase.from('expenses').upsert(expensesPayload);
+        if (exErr) throw exErr;
+        count += expenses.length;
+      }
+
+      // 4. Followers
+      if (followerHistory.length > 0) {
+        const followersPayload = followerHistory.map((f) => ({
+          id: f.id,
+          user_id: user.id,
+          page_id: f.page_id,
+          data: f.data,
+          quantidade_seguidores: f.quantidade_seguidores,
+        }));
+        const { error: fErr } = await supabase.from('follower_history').upsert(followersPayload);
+        if (fErr) throw fErr;
+        count += followerHistory.length;
+      }
+
+      // 5. Goals
+      if (goals.length > 0) {
+        const goalsPayload = goals.map((g) => ({
+          id: g.id,
+          user_id: user.id,
+          mes: g.mes,
+          meta_faturamento: g.meta_faturamento,
+        }));
+        const { error: gErr } = await supabase.from('financial_goals').upsert(goalsPayload);
+        if (gErr) throw gErr;
+        count += goals.length;
+      }
+
+      setIsSchemaMissing(false);
+      await loadAllData();
+      return { success: true, count };
+    } catch (err: any) {
+      console.error('Error syncing local data to Supabase:', err);
+      return { success: false, error: err.message };
     }
   };
 
@@ -190,7 +354,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ==========================
   const createPage = async (
     pageData: Omit<ContentPage, 'id' | 'user_id' | 'created_at' | 'updated_at'>
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; savedLocally?: boolean }> => {
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
@@ -208,7 +372,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updated_at: new Date().toISOString(),
     };
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { data, error: sbError } = await supabase
           .from('pages')
@@ -225,7 +389,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .select('*')
           .single();
 
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+            throw sbError;
+          }
+          throw sbError;
+        }
+
         const saved = (data as ContentPage) || newPageObj;
         setPages((prev) => {
           const updated = [...prev, saved].sort((a, b) => a.nome.localeCompare(b.nome));
@@ -234,6 +405,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         return { success: true };
       } catch (err: any) {
+        if (isTableMissingError(err)) {
+          setIsSchemaMissing(true);
+          setPages((prev) => {
+            const updated = [...prev, newPageObj].sort((a, b) => a.nome.localeCompare(b.nome));
+            saveLocalBackup('pages', updated);
+            return updated;
+          });
+          return { success: true, savedLocally: true };
+        }
         console.error('Supabase error creating page:', err);
         return { success: false, error: err.message || 'Erro ao criar página no Supabase.' };
       }
@@ -244,7 +424,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveLocalBackup('pages', updated);
         return updated;
       });
-      return { success: true };
+      return { success: true, savedLocally: true };
     }
   };
 
@@ -255,7 +435,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('pages')
@@ -265,9 +445,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao atualizar página.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao atualizar página.' };
+        }
       }
     }
 
@@ -285,16 +473,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('pages')
           .delete()
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao excluir página.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao excluir página.' };
+        }
       }
     }
 
@@ -325,12 +521,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     data: string;
     horario?: string | null;
     descricao?: string | null;
-  }): Promise<{ success: boolean; error?: string }> => {
+  }): Promise<{ success: boolean; error?: string; savedLocally?: boolean }> => {
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
 
-    // Strict validation based on rules 6, 7 & 18:
-    // If origem == 'geral' -> page_id MUST be null.
-    // If origem == 'especifica' -> page_id is required.
     const finalPageId = data.origem === 'geral' ? null : data.page_id || null;
     if (data.origem === 'especifica' && !finalPageId) {
       return { success: false, error: 'Selecione uma página para ganhos específicos.' };
@@ -363,7 +556,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       page: associatedPage,
     };
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { data: sbData, error: sbErr } = await supabase
           .from('earnings')
@@ -380,7 +573,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .select('*, page:pages(*)')
           .single();
 
-        if (sbErr) throw sbErr;
+        if (sbErr) {
+          if (isTableMissingError(sbErr)) {
+            setIsSchemaMissing(true);
+            throw sbErr;
+          }
+          throw sbErr;
+        }
+
         const saved = (sbData as Earning) || newEarning;
         setEarnings((prev) => {
           const updated = [saved, ...prev].sort((a, b) => b.data.localeCompare(a.data));
@@ -389,6 +589,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         return { success: true };
       } catch (err: any) {
+        if (isTableMissingError(err)) {
+          setIsSchemaMissing(true);
+          setEarnings((prev) => {
+            const updated = [newEarning, ...prev].sort((a, b) => b.data.localeCompare(a.data));
+            saveLocalBackup('earnings', updated);
+            return updated;
+          });
+          return { success: true, savedLocally: true };
+        }
         console.error('Supabase error inserting earning:', err);
         return { success: false, error: err.message || 'Não foi possível salvar o ganho no Supabase.' };
       }
@@ -398,7 +607,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveLocalBackup('earnings', updated);
         return updated;
       });
-      return { success: true };
+      return { success: true, savedLocally: true };
     }
   };
 
@@ -409,13 +618,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    // Enforce rule: if origem is changed to 'geral', page_id must become null
     const finalData = { ...data };
     if (finalData.origem === 'geral') {
       finalData.page_id = null;
     }
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('earnings')
@@ -425,9 +633,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao atualizar ganho.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao atualizar ganho.' };
+        }
       }
     }
 
@@ -450,16 +666,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('earnings')
           .delete()
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao excluir ganho.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao excluir ganho.' };
+        }
       }
     }
 
@@ -480,7 +704,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     valor: number;
     data: string;
     descricao?: string | null;
-  }): Promise<{ success: boolean; error?: string }> => {
+  }): Promise<{ success: boolean; error?: string; savedLocally?: boolean }> => {
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     if (!data.valor || data.valor <= 0) {
       return { success: false, error: 'O valor da despesa deve ser maior que zero.' };
@@ -508,7 +732,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       page: associatedPage,
     };
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { data: sbData, error: sbErr } = await supabase
           .from('expenses')
@@ -523,7 +747,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .select('*, page:pages(*)')
           .single();
 
-        if (sbErr) throw sbErr;
+        if (sbErr) {
+          if (isTableMissingError(sbErr)) {
+            setIsSchemaMissing(true);
+            throw sbErr;
+          }
+          throw sbErr;
+        }
+
         const saved = (sbData as Expense) || newExpense;
         setExpenses((prev) => {
           const updated = [saved, ...prev].sort((a, b) => b.data.localeCompare(a.data));
@@ -532,6 +763,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         return { success: true };
       } catch (err: any) {
+        if (isTableMissingError(err)) {
+          setIsSchemaMissing(true);
+          setExpenses((prev) => {
+            const updated = [newExpense, ...prev].sort((a, b) => b.data.localeCompare(a.data));
+            saveLocalBackup('expenses', updated);
+            return updated;
+          });
+          return { success: true, savedLocally: true };
+        }
         return { success: false, error: err.message || 'Erro ao registrar despesa no Supabase.' };
       }
     } else {
@@ -540,7 +780,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveLocalBackup('expenses', updated);
         return updated;
       });
-      return { success: true };
+      return { success: true, savedLocally: true };
     }
   };
 
@@ -551,7 +791,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('expenses')
@@ -561,9 +801,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao atualizar despesa.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao atualizar despesa.' };
+        }
       }
     }
 
@@ -586,16 +834,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('expenses')
           .delete()
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao excluir despesa.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao excluir despesa.' };
+        }
       }
     }
 
@@ -609,13 +865,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // ==========================
   // FOLLOWER HISTORY
-  // (Prevents duplicates for same page and date - Requirement #44)
   // ==========================
   const recordFollowers = async (
     page_id: string,
     dataDate: string,
     quantidade_seguidores: number
-  ): Promise<{ success: boolean; error?: string; updated?: boolean }> => {
+  ): Promise<{ success: boolean; error?: string; updated?: boolean; savedLocally?: boolean }> => {
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     if (quantidade_seguidores < 0 || isNaN(quantidade_seguidores)) {
       return { success: false, error: 'Quantidade de seguidores inválida.' };
@@ -629,10 +884,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       (f) => f.page_id === page_id && f.data === dataDate
     );
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         if (existing) {
-          // Update existing record
           const { error: sbError } = await supabase
             .from('follower_history')
             .update({ quantidade_seguidores: Math.round(quantidade_seguidores) })
@@ -651,7 +905,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
           return { success: true, updated: true };
         } else {
-          // Insert new record
           const { data: sbData, error: sbError } = await supabase
             .from('follower_history')
             .insert({
@@ -674,38 +927,43 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return { success: true, updated: false };
         }
       } catch (err: any) {
-        console.error('Supabase follower save error:', err);
-        return { success: false, error: err.message || 'Erro ao registrar seguidores no Supabase.' };
+        if (isTableMissingError(err)) {
+          setIsSchemaMissing(true);
+          // Fallback to local
+        } else {
+          console.error('Supabase follower save error:', err);
+          return { success: false, error: err.message || 'Erro ao registrar seguidores no Supabase.' };
+        }
       }
+    }
+
+    // Local mode
+    if (existing) {
+      setFollowerHistory((prev) => {
+        const updated = prev.map((f) =>
+          f.id === existing.id
+            ? { ...f, quantidade_seguidores: Math.round(quantidade_seguidores) }
+            : f
+        );
+        saveLocalBackup('followers', updated);
+        return updated;
+      });
+      return { success: true, updated: true, savedLocally: true };
     } else {
-      // Local mode
-      if (existing) {
-        setFollowerHistory((prev) => {
-          const updated = prev.map((f) =>
-            f.id === existing.id
-              ? { ...f, quantidade_seguidores: Math.round(quantidade_seguidores) }
-              : f
-          );
-          saveLocalBackup('followers', updated);
-          return updated;
-        });
-        return { success: true, updated: true };
-      } else {
-        const newRecord: FollowerHistory = {
-          id: crypto.randomUUID(),
-          user_id: user.id,
-          page_id,
-          data: dataDate,
-          quantidade_seguidores: Math.round(quantidade_seguidores),
-          created_at: new Date().toISOString(),
-        };
-        setFollowerHistory((prev) => {
-          const updated = [...prev, newRecord].sort((a, b) => a.data.localeCompare(b.data));
-          saveLocalBackup('followers', updated);
-          return updated;
-        });
-        return { success: true, updated: false };
-      }
+      const newRecord: FollowerHistory = {
+        id: crypto.randomUUID(),
+        user_id: user.id,
+        page_id,
+        data: dataDate,
+        quantidade_seguidores: Math.round(quantidade_seguidores),
+        created_at: new Date().toISOString(),
+      };
+      setFollowerHistory((prev) => {
+        const updated = [...prev, newRecord].sort((a, b) => a.data.localeCompare(b.data));
+        saveLocalBackup('followers', updated);
+        return updated;
+      });
+      return { success: true, updated: false, savedLocally: true };
     }
   };
 
@@ -713,16 +971,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, error: 'Usuário não autenticado.' };
     const supabase = getSupabase();
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         const { error: sbError } = await supabase
           .from('follower_history')
           .delete()
           .eq('id', id)
           .eq('user_id', user.id);
-        if (sbError) throw sbError;
+        if (sbError) {
+          if (isTableMissingError(sbError)) {
+            setIsSchemaMissing(true);
+          } else {
+            throw sbError;
+          }
+        }
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao excluir registro de seguidores.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao excluir registro de seguidores.' };
+        }
       }
     }
 
@@ -746,7 +1012,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const existing = goals.find((g) => g.mes === mes);
 
-    if (supabase) {
+    if (supabase && !isSchemaMissing) {
       try {
         if (existing) {
           const { error: sbError } = await supabase
@@ -757,7 +1023,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             })
             .eq('id', existing.id)
             .eq('user_id', user.id);
-          if (sbError) throw sbError;
+          if (sbError) {
+            if (isTableMissingError(sbError)) {
+              setIsSchemaMissing(true);
+            } else {
+              throw sbError;
+            }
+          }
 
           setGoals((prev) => {
             const updated = prev.map((g) =>
@@ -776,44 +1048,60 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             })
             .select('*')
             .single();
-          if (sbError) throw sbError;
+          if (sbError) {
+            if (isTableMissingError(sbError)) {
+              setIsSchemaMissing(true);
+            } else {
+              throw sbError;
+            }
+          }
 
           setGoals((prev) => {
-            const updated = [...prev, sbData as FinancialGoal];
+            const updated = [...prev, (sbData as FinancialGoal) || {
+              id: crypto.randomUUID(),
+              user_id: user.id,
+              mes,
+              meta_faturamento: Number(meta_faturamento),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }];
             saveLocalBackup('goals', updated);
             return updated;
           });
         }
         return { success: true };
       } catch (err: any) {
-        return { success: false, error: err.message || 'Erro ao salvar meta no Supabase.' };
+        if (!isTableMissingError(err)) {
+          return { success: false, error: err.message || 'Erro ao salvar meta no Supabase.' };
+        }
       }
-    } else {
-      if (existing) {
-        setGoals((prev) => {
-          const updated = prev.map((g) =>
-            g.id === existing.id ? { ...g, meta_faturamento: Number(meta_faturamento) } : g
-          );
-          saveLocalBackup('goals', updated);
-          return updated;
-        });
-      } else {
-        const newGoal: FinancialGoal = {
-          id: crypto.randomUUID(),
-          user_id: user.id,
-          mes,
-          meta_faturamento: Number(meta_faturamento),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setGoals((prev) => {
-          const updated = [...prev, newGoal];
-          saveLocalBackup('goals', updated);
-          return updated;
-        });
-      }
-      return { success: true };
     }
+
+    // Local fallback for goals
+    if (existing) {
+      setGoals((prev) => {
+        const updated = prev.map((g) =>
+          g.id === existing.id ? { ...g, meta_faturamento: Number(meta_faturamento) } : g
+        );
+        saveLocalBackup('goals', updated);
+        return updated;
+      });
+    } else {
+      const newGoal: FinancialGoal = {
+        id: crypto.randomUUID(),
+        user_id: user.id,
+        mes,
+        meta_faturamento: Number(meta_faturamento),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setGoals((prev) => {
+        const updated = [...prev, newGoal];
+        saveLocalBackup('goals', updated);
+        return updated;
+      });
+    }
+    return { success: true };
   };
 
   // Re-calculate dashboard metrics automatically whenever earnings or expenses change
@@ -830,7 +1118,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         metrics,
         loading,
         error,
+        isSchemaMissing,
         refreshData: loadAllData,
+        checkSchema,
+        syncLocalDataToSupabase,
         createPage,
         updatePage,
         deletePage,
