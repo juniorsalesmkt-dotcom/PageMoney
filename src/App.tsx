@@ -51,10 +51,10 @@ const AppContent: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+      <div className="min-h-screen bg-neutral-50 dark:bg-[#0d0f12] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-9 h-9 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs font-semibold text-neutral-600">
+          <div className="w-9 h-9 border-2 border-neutral-900 dark:border-white border-t-transparent dark:border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs font-semibold text-neutral-600 dark:text-neutral-300">
             Carregando PageMoney...
           </span>
         </div>
@@ -77,7 +77,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-100 flex flex-col md:flex-row text-neutral-900 antialiased font-sans">
+    <div className="min-h-screen bg-neutral-100 dark:bg-[#0d0f12] flex flex-col md:flex-row text-neutral-900 dark:text-neutral-100 antialiased font-sans transition-colors duration-200">
       {/* Toast notifications container */}
       <Toast toasts={toasts} onDismiss={removeToast} />
 

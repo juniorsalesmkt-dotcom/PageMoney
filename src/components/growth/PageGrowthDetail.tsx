@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import { ContentPage } from '../../types';
 import { calculatePageGrowth } from '../../utils/calcUtils';
 import {
@@ -44,6 +45,7 @@ export const PageGrowthDetail: React.FC<PageGrowthDetailProps> = ({
   onToast,
 }) => {
   const { followerHistory, deleteFollowerRecord } = useData();
+  const { isDark } = useTheme();
   const [chartFilter, setChartFilter] = useState<FollowerChartFilter>('30d');
 
   const isYouTube = page.plataforma === 'YouTube';
@@ -302,7 +304,7 @@ export const PageGrowthDetail: React.FC<PageGrowthDetailProps> = ({
             </p>
           </div>
 
-          <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 bg-neutral-50 text-xs">
+          <div className="inline-flex rounded-lg border border-neutral-200 dark:border-[#262c38] p-0.5 bg-neutral-50 dark:bg-[#12151b] text-xs">
             {(
               [
                 { id: '7d', label: '7 dias' },
@@ -316,10 +318,10 @@ export const PageGrowthDetail: React.FC<PageGrowthDetailProps> = ({
               <button
                 key={f.id}
                 onClick={() => setChartFilter(f.id)}
-                className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer ${
                   chartFilter === f.id
-                    ? 'bg-white text-neutral-900 shadow-2xs'
-                    : 'text-neutral-500 hover:text-neutral-800'
+                    ? 'bg-white dark:bg-[#1c2028] text-neutral-900 dark:text-neutral-100 shadow-2xs font-semibold'
+                    : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
                 }`}
               >
                 {f.label}
@@ -330,13 +332,13 @@ export const PageGrowthDetail: React.FC<PageGrowthDetailProps> = ({
 
         {chartData.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-sm font-semibold text-neutral-700">
+            <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
               Ainda não existem registros de {term} para esta página.
             </p>
             <button
               type="button"
               onClick={() => onOpenFollowerModal(page.id)}
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition"
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white dark:text-neutral-950 bg-neutral-900 dark:bg-white rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               Registrar {termCap}
@@ -346,16 +348,16 @@ export const PageGrowthDetail: React.FC<PageGrowthDetailProps> = ({
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? '#262c38' : '#f1f5f9'} />
                 <XAxis
                   dataKey="label"
-                  stroke="#94a3b8"
+                  stroke={isDark ? '#64748b' : '#94a3b8'}
                   fontSize={11}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="#94a3b8"
+                  stroke={isDark ? '#64748b' : '#94a3b8'}
                   fontSize={11}
                   tickLine={false}
                   axisLine={false}
@@ -363,12 +365,12 @@ export const PageGrowthDetail: React.FC<PageGrowthDetailProps> = ({
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#1e293b',
+                    backgroundColor: isDark ? '#15181e' : '#1e293b',
                     borderRadius: '12px',
                     color: '#fff',
-                    border: 'none',
+                    border: isDark ? '1px solid #262c38' : 'none',
                     fontSize: '12px',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
                   }}
                   formatter={(val: any) => [formatFollowerCount(Number(val)), termCap]}
                   labelFormatter={(label) => `Data: ${label}`}

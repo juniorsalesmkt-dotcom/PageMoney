@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import {
   formatCurrency,
   formatPercent,
@@ -43,6 +44,7 @@ type DateFilter = '7d' | '30d' | '90d' | 'month' | 'year';
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }) => {
   const { earnings, metrics } = useData();
+  const { isDark } = useTheme();
   const [chartFilter, setChartFilter] = useState<DateFilter>('30d');
 
   const currentMonthStr = getCurrentMonthSP();
@@ -415,7 +417,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
             </div>
 
             {/* Period Filters */}
-            <div className="inline-flex rounded-lg border border-neutral-200 p-0.5 bg-neutral-50 text-xs">
+            <div className="inline-flex rounded-lg border border-neutral-200 dark:border-[#262c38] p-0.5 bg-neutral-50 dark:bg-[#12151b] text-xs">
               {(
                 [
                   { id: '7d', label: '7 dias' },
@@ -428,10 +430,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
                 <button
                   key={f.id}
                   onClick={() => setChartFilter(f.id)}
-                  className={`px-2.5 py-1 rounded-md font-medium transition-all ${
+                  className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer ${
                     chartFilter === f.id
-                      ? 'bg-white text-neutral-900 shadow-2xs'
-                      : 'text-neutral-500 hover:text-neutral-800'
+                      ? 'bg-white dark:bg-[#1c2028] text-neutral-900 dark:text-neutral-100 shadow-2xs font-semibold'
+                      : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
                   }`}
                 >
                   {f.label}
@@ -442,16 +444,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
 
           {!hasAnyEarnings ? (
             <div className="py-16 text-center">
-              <p className="text-sm font-semibold text-neutral-700">
+              <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
                 Ainda não existem ganhos registrados.
               </p>
-              <p className="text-xs text-neutral-400 mt-1 max-w-xs mx-auto">
+              <p className="text-xs text-neutral-400 dark:text-neutral-500 mt-1 max-w-xs mx-auto">
                 Registre seu primeiro ganho para visualizar a evolução do seu faturamento em gráfico.
               </p>
               <button
                 type="button"
                 onClick={onOpenNewEarning}
-                className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-neutral-900 rounded-lg hover:bg-neutral-800 transition"
+                className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white dark:text-neutral-950 bg-neutral-900 dark:bg-white rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Registrar ganho
@@ -467,16 +469,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? '#262c38' : '#f1f5f9'} />
                   <XAxis
                     dataKey="label"
-                    stroke="#94a3b8"
+                    stroke={isDark ? '#64748b' : '#94a3b8'}
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
                   />
                   <YAxis
-                    stroke="#94a3b8"
+                    stroke={isDark ? '#64748b' : '#94a3b8'}
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
@@ -484,12 +486,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1e293b',
+                      backgroundColor: isDark ? '#15181e' : '#1e293b',
                       borderRadius: '12px',
                       color: '#fff',
-                      border: 'none',
+                      border: isDark ? '1px solid #262c38' : 'none',
                       fontSize: '12px',
-                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
                     }}
                     formatter={(val: any) => [formatCurrency(Number(val)), 'Faturamento']}
                     labelFormatter={(label) => `Data: ${label}`}
@@ -533,6 +535,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
                       dataKey="name"
                       type="category"
                       fontSize={11}
+                      stroke={isDark ? '#cbd5e1' : '#475569'}
                       tickLine={false}
                       axisLine={false}
                       width={100}
@@ -540,11 +543,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
                     <Tooltip
                       formatter={(v: any) => [formatCurrency(Number(v)), 'Total']}
                       contentStyle={{
-                        backgroundColor: '#1e293b',
+                        backgroundColor: isDark ? '#15181e' : '#1e293b',
                         borderRadius: '10px',
                         color: '#fff',
                         fontSize: '12px',
-                        border: 'none',
+                        border: isDark ? '1px solid #262c38' : 'none',
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
                       }}
                     />
                     <Bar dataKey="valor" radius={[0, 6, 6, 0]}>

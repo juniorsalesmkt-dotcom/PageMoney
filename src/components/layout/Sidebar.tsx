@@ -54,18 +54,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const navContent = (
-    <div className="flex flex-col h-full bg-white border-r border-neutral-200/80 w-64 select-none">
+    <div className="flex flex-col h-full bg-white dark:bg-[#15181e] border-r border-neutral-200/80 dark:border-[#262c38] w-64 select-none">
       {/* Brand logo */}
-      <div className="flex items-center justify-between px-6 py-5 border-b border-neutral-100">
+      <div className="flex items-center justify-between px-6 py-5 border-b border-neutral-100 dark:border-[#262c38]">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-neutral-900 flex items-center justify-center shadow-xs">
+          <div className="w-8 h-8 rounded-xl bg-neutral-900 dark:bg-emerald-600 flex items-center justify-center shadow-xs">
             <span className="text-white font-black text-sm tracking-tight">PM</span>
           </div>
           <div className="flex flex-col">
-            <span className="font-bold text-neutral-900 text-base leading-tight tracking-tight">
+            <span className="font-bold text-neutral-900 dark:text-neutral-100 text-base leading-tight tracking-tight">
               PageMoney
             </span>
-            <span className="text-[10px] text-neutral-500 uppercase font-semibold tracking-wider">
+            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 uppercase font-semibold tracking-wider">
               Finanças & Páginas
             </span>
           </div>
@@ -73,7 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {isOpenMobile && (
           <button
             onClick={() => setIsOpenMobile(false)}
-            className="md:hidden text-neutral-400 hover:text-neutral-700 p-1.5 rounded-lg"
+            className="md:hidden text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 p-1.5 rounded-lg"
           >
             <X className="w-5 h-5" />
           </button>
@@ -89,15 +89,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => handleSelect(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-neutral-900 text-white font-semibold shadow-xs'
-                  : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                  ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 font-semibold shadow-xs'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-[#1c2028] hover:text-neutral-900 dark:hover:text-neutral-100'
               }`}
             >
               <Icon
                 className={`w-4 h-4 shrink-0 stroke-[1.8] ${
-                  isActive ? 'text-white' : 'text-neutral-500'
+                  isActive ? 'text-white dark:text-neutral-950' : 'text-neutral-500 dark:text-neutral-400'
                 }`}
               />
               <span>{item.label}</span>
