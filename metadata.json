@@ -1,0 +1,6 @@
+{
+  "name": "PageMoney",
+  "description": "Sistema completo para controle de faturamento, despesas, lucro e crescimento de páginas de conteúdo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

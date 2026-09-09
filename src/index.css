@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Base dark mode styles */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+html, body {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Global dark mode theme overrides for cards, sidebars, headers, borders, and inputs */
+html.dark .bg-white {
+  background-color: #1e293b !important;
+  color: #f1f5f9;
+}
+
+html.dark .bg-neutral-50 {
+  background-color: #0f172a !important;
+}
+
+html.dark .bg-neutral-100 {
+  background-color: #0b1120 !important;
+}
+
+html.dark .border-neutral-200,
+html.dark .border-neutral-200\/80,
+html.dark .border-neutral-200\/90,
+html.dark .border-neutral-100 {
+  border-color: #334155 !important;
+}
+
+html.dark .text-neutral-900 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-neutral-800 {
+  color: #f1f5f9 !important;
+}
+
+html.dark .text-neutral-700 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-neutral-600 {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-neutral-500 {
+  color: #64748b !important;
+}
+
+html.dark .text-neutral-400 {
+  color: #475569 !important;
+}
+
+/* Inputs, selects, and textareas in dark mode */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #475569 !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #38bdf8 !important;
+}
+
+/* Modals backdrop and containers in dark mode */
+html.dark .bg-neutral-900\/40,
+html.dark .bg-neutral-900\/50,
+html.dark .bg-black\/50 {
+  background-color: rgba(0, 0, 0, 0.75) !important;
+}
+
+/* Subtle highlights in dark mode */
+html.dark .hover\:bg-neutral-50:hover,
+html.dark .hover\:bg-neutral-100:hover {
+  background-color: #334155 !important;
+}
+
+/* Dark mode button contrast adjustments */
+html.dark .bg-neutral-900 {
+  background-color: #38bdf8 !important;
+  color: #0f172a !important;
+}
+
+html.dark .bg-neutral-900:hover {
+  background-color: #7dd3fc !important;
+}
+
+html.dark .bg-neutral-900 .text-white {
+  color: #0f172a !important;
+}
+
+/* Special cards: neutral-900 metrics banner (Meta do Mês / Margem) */
+html.dark div.bg-neutral-900 {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+}
+
+html.dark div.bg-neutral-900 * {
+  color: inherit;
+}
+
+/* Neutral badges */
+html.dark .bg-neutral-200 {
+  background-color: #334155 !important;
+}
