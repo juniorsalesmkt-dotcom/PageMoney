@@ -169,6 +169,79 @@ export const ReportsView: React.FC = () => {
       .sort((a, b) => b.valor - a.valor);
   }, [filteredEarnings, totalFaturamento]);
 
+  // Profit per Page breakdown
+  const pagesProfitBreakdown = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        id: string;
+        nome: string;
+        plataforma: string;
+        receita: number;
+        despesas: number;
+        lucro: number;
+        margem: number;
+      }
+    > = {};
+
+    pages.forEach((p) => {
+      map[p.id] = {
+        id: p.id,
+        nome: p.nome,
+        plataforma: p.plataforma,
+        receita: 0,
+        despesas: 0,
+        lucro: 0,
+        margem: 0,
+      };
+    });
+
+    let geralReceita = 0;
+    let geralDespesas = 0;
+
+    filteredEarnings.forEach((e) => {
+      const val = Number(e.valor || 0);
+      if (e.page_id && e.origem !== 'geral' && map[e.page_id]) {
+        map[e.page_id].receita += val;
+      } else {
+        geralReceita += val;
+      }
+    });
+
+    filteredExpenses.forEach((ex) => {
+      const val = Number(ex.valor || 0);
+      if (ex.page_id && map[ex.page_id]) {
+        map[ex.page_id].despesas += val;
+      } else {
+        geralDespesas += val;
+      }
+    });
+
+    const list = Object.values(map).map((item) => {
+      const lucro = item.receita - item.despesas;
+      const margem = item.receita > 0 ? (lucro / item.receita) * 100 : 0;
+      return { ...item, lucro, margem };
+    });
+
+    list.sort((a, b) => b.lucro - a.lucro);
+
+    if (geralReceita > 0 || geralDespesas > 0) {
+      const geralLucro = geralReceita - geralDespesas;
+      const geralMargem = geralReceita > 0 ? (geralLucro / geralReceita) * 100 : 0;
+      list.push({
+        id: 'geral',
+        nome: 'Geral (Sem página específica)',
+        plataforma: 'Geral',
+        receita: geralReceita,
+        despesas: geralDespesas,
+        lucro: geralLucro,
+        margem: geralMargem,
+      });
+    }
+
+    return list;
+  }, [pages, filteredEarnings, filteredExpenses]);
+
   const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#64748b'];
 
   const getPageName = (pageId?: string | null): string => {
@@ -410,6 +483,86 @@ export const ReportsView: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Profit Breakdown by Page */}
+      <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-2xs overflow-hidden">
+        <div className="p-5 border-b border-neutral-100">
+          <h3 className="text-sm font-bold text-neutral-900 tracking-tight mb-0.5">
+            Lucro Separado por Página
+          </h3>
+          <p className="text-xs text-neutral-500">
+            Comparativo individual de receita bruta, despesas vinculadas e lucro líquido de cada página no período selecionado
+          </p>
+        </div>
+
+        {pagesProfitBreakdown.length === 0 ? (
+          <p className="text-xs text-neutral-400 py-8 text-center">
+            Nenhuma página ou movimentação registrada para este período.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-neutral-50 text-neutral-600 font-semibold border-b border-neutral-100">
+                <tr>
+                  <th className="px-6 py-3.5">Página / Origem</th>
+                  <th className="px-6 py-3.5">Plataforma</th>
+                  <th className="px-6 py-3.5 text-right">Receita Bruta</th>
+                  <th className="px-6 py-3.5 text-right">Despesas</th>
+                  <th className="px-6 py-3.5 text-right">Lucro Líquido</th>
+                  <th className="px-6 py-3.5 text-right">Margem</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100 text-neutral-700">
+                {pagesProfitBreakdown.map((item) => (
+                  <tr key={item.id} className="hover:bg-neutral-50/60 transition-colors">
+                    <td className="px-6 py-3.5 font-bold text-neutral-900">
+                      {item.nome}
+                    </td>
+                    <td className="px-6 py-3.5 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-700">
+                        {item.plataforma}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3.5 text-right whitespace-nowrap font-semibold text-neutral-900">
+                      {formatCurrency(item.receita)}
+                    </td>
+                    <td className="px-6 py-3.5 text-right whitespace-nowrap font-semibold text-rose-600">
+                      {formatCurrency(item.despesas)}
+                    </td>
+                    <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                      <span
+                        className={`text-sm font-bold ${
+                          item.lucro > 0
+                            ? 'text-emerald-600'
+                            : item.lucro < 0
+                            ? 'text-rose-600'
+                            : 'text-neutral-700'
+                        }`}
+                      >
+                        {item.lucro > 0 ? '+' : ''}
+                        {formatCurrency(item.lucro)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                          item.receita === 0 && item.despesas === 0
+                            ? 'bg-neutral-100 text-neutral-500'
+                            : item.lucro >= 0
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-rose-50 text-rose-700'
+                        }`}
+                      >
+                        {item.margem.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

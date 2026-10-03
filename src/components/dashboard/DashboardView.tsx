@@ -35,6 +35,8 @@ import {
   Cell,
 } from 'recharts';
 import { EmptyState } from '../common/EmptyState';
+import { ContentPage } from '../../types';
+import { PageProfitModal } from '../pages/PageProfitModal';
 
 interface DashboardViewProps {
   onOpenNewEarning: () => void;
@@ -43,9 +45,10 @@ interface DashboardViewProps {
 type DateFilter = '7d' | '30d' | '90d' | 'month' | 'year';
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }) => {
-  const { earnings, metrics } = useData();
+  const { earnings, expenses, pages, metrics } = useData();
   const { isDark } = useTheme();
   const [chartFilter, setChartFilter] = useState<DateFilter>('30d');
+  const [selectedProfitPage, setSelectedProfitPage] = useState<ContentPage | null>(null);
 
   const currentMonthStr = getCurrentMonthSP();
   const prevMonthStr = getPreviousMonthSP();
@@ -111,6 +114,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
       .map(([name, valor]) => ({ name, valor }))
       .sort((a, b) => b.valor - a.valor);
   }, [earnings]);
+
+  // Profit per Page for current month
+  const pageProfitsMonth = useMemo(() => {
+    if (pages.length === 0) return [];
+    const map: Record<
+      string,
+      { page: ContentPage; receita: number; despesas: number; lucro: number; margem: number }
+    > = {};
+
+    pages.forEach((p) => {
+      map[p.id] = { page: p, receita: 0, despesas: 0, lucro: 0, margem: 0 };
+    });
+
+    earnings.forEach((e) => {
+      if (
+        e.page_id &&
+        e.origem !== 'geral' &&
+        map[e.page_id] &&
+        e.data.startsWith(currentMonthStr)
+      ) {
+        map[e.page_id].receita += Number(e.valor || 0);
+      }
+    });
+
+    expenses.forEach((ex) => {
+      if (ex.page_id && map[ex.page_id] && ex.data.startsWith(currentMonthStr)) {
+        map[ex.page_id].despesas += Number(ex.valor || 0);
+      }
+    });
+
+    return Object.values(map)
+      .map((item) => {
+        const lucro = item.receita - item.despesas;
+        const margem = item.receita > 0 ? (lucro / item.receita) * 100 : 0;
+        return { ...item, lucro, margem };
+      })
+      .sort((a, b) => b.lucro - a.lucro);
+  }, [pages, earnings, expenses, currentMonthStr]);
 
   const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#64748b'];
 
@@ -581,6 +622,98 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onOpenNewEarning }
           )}
         </div>
       </div>
+
+      {/* Profit per Page Section */}
+      {pages.length > 0 && (
+        <div className="bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-neutral-900 tracking-tight">
+                Lucro Individual por Página ({currentMonthName})
+              </h3>
+              <p className="text-xs text-neutral-500">
+                Veja separadamente quanto cada página está gerando de receita, despesa e lucro líquido neste mês
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {pageProfitsMonth.map(({ page, receita, despesas, lucro, margem }) => (
+              <div
+                key={page.id}
+                onClick={() => setSelectedProfitPage(page)}
+                className="p-4 rounded-xl border border-neutral-200/80 dark:border-[#262c38] bg-neutral-50/50 dark:bg-[#101318] hover:border-neutral-300 transition cursor-pointer flex flex-col justify-between"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                      {page.nome}
+                    </h4>
+                    <span className="text-[10px] font-medium text-neutral-500">
+                      {page.plataforma} {page.username ? `• ${page.username}` : ''}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      receita === 0 && despesas === 0
+                        ? 'bg-neutral-200/70 text-neutral-600'
+                        : lucro >= 0
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    {margem.toFixed(1)}%
+                  </span>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t border-neutral-200/60 dark:border-[#222631] flex items-end justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-neutral-400 block">
+                      Lucro Líquido
+                    </span>
+                    <span
+                      className={`text-base font-bold ${
+                        lucro > 0
+                          ? 'text-emerald-600'
+                          : lucro < 0
+                          ? 'text-rose-600'
+                          : 'text-neutral-700 dark:text-neutral-300'
+                      }`}
+                    >
+                      {lucro > 0 ? '+' : ''}
+                      {formatCurrency(lucro)}
+                    </span>
+                  </div>
+
+                  <div className="text-right text-[11px] space-y-0.5">
+                    <div className="text-neutral-600 dark:text-neutral-400">
+                      Ganhos:{' '}
+                      <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                        {formatCurrency(receita)}
+                      </span>
+                    </div>
+                    <div className="text-neutral-600 dark:text-neutral-400">
+                      Custos:{' '}
+                      <span className="font-semibold text-rose-600">
+                        {formatCurrency(despesas)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selectedProfitPage && (
+        <PageProfitModal
+          isOpen={Boolean(selectedProfitPage)}
+          onClose={() => setSelectedProfitPage(null)}
+          page={selectedProfitPage}
+          initialPeriod="month"
+        />
+      )}
     </div>
   );
 };
